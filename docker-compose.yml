@@ -1,6 +1,20 @@
 services:
 
   # ───────────────────────────────────────────────────
+  # Redis — shared session store
+  # ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    networks:
+      - sso-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ───────────────────────────────────────────────────
   # Spring Boot Backend (internal, not directly exposed
   # to the internet — only reachable inside Docker network)
   # ───────────────────────────────────────────────────
@@ -17,9 +31,14 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      # Redis service name inside Docker network
+      REDIS_HOST: redis
     networks:
       - sso-net
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       # Spring Boot Actuator not included in demo, so check the login endpoint instead.
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/login || exit 1"]

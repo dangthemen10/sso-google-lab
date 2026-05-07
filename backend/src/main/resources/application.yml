@@ -6,6 +6,45 @@ server:
   forward-headers-strategy: framework
 
 spring:
+  session:
+    store-type: redis
+    timeout: 30m
+  data:
+    redis:
+      client-type: jedis
+
+      # ── Chế độ 1: Single node (local dev / Docker Compose) ─────────────
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+      # ── Chế độ 2: Sentinel — High Availability (1 master, N replicas) ──
+      # Khi master chết, Sentinel tự bầu replica lên làm master mới.
+      # Bật bằng cách comment Chế độ 1 và bỏ comment block bên dưới:
+      #
+      # sentinel:
+      #   master: ${REDIS_SENTINEL_MASTER:mymaster}
+      #   nodes:
+      #     - ${REDIS_SENTINEL_NODE_1:sentinel1:26379}
+      #     - ${REDIS_SENTINEL_NODE_2:sentinel2:26379}
+      #     - ${REDIS_SENTINEL_NODE_3:sentinel3:26379}
+
+      # ── Chế độ 3: Cluster — Horizontal Scaling (data sharding) ─────────
+      # Dữ liệu được phân tán (sharding) trên nhiều node.
+      # Bật bằng cách comment Chế độ 1 và bỏ comment block bên dưới:
+      #
+      # cluster:
+      #   nodes:
+      #     - ${REDIS_CLUSTER_NODE_1:redis1:6379}
+      #     - ${REDIS_CLUSTER_NODE_2:redis2:6379}
+      #     - ${REDIS_CLUSTER_NODE_3:redis3:6379}
+      #   max-redirects: 3
+
+      jedis:
+        pool:
+          max-active: 10 # số connection tối đa trong pool
+          max-idle: 5
+          min-idle: 1
+          max-wait: 2000ms # timeout khi pool đầy
   security:
     oauth2:
       client:

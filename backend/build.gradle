@@ -21,6 +21,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation('org.springframework.boot:spring-boot-starter-data-redis') {
+        // Exclude Lettuce (default client) — dùng Jedis thay thế
+        exclude group: 'io.lettuce', module: 'lettuce-core'
+    }
+    implementation 'redis.clients:jedis'
+    implementation 'org.springframework.session:spring-session-data-redis'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
