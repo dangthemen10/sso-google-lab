@@ -1,0 +1,58 @@
+services:
+
+  # ───────────────────────────────────────────────────
+  # Spring Boot Backend (internal, not directly exposed
+  # to the internet — only reachable inside Docker network)
+  # ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # No ports mapping → BE is truly internal.
+    # Only reachable via Docker network "sso-net" by the frontend service.
+    # Browser cannot reach localhost:8080 directly.
+    environment:
+      # Credentials are read from the .env file at the project root.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+    networks:
+      - sso-net
+    restart: unless-stopped
+    healthcheck:
+      # Spring Boot Actuator not included in demo, so check the login endpoint instead.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/login || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ───────────────────────────────────────────────────
+  # Next.js Frontend (public-facing reverse proxy)
+  # ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Passed at build time so next.config.mjs rewrites point to the correct
+        # Docker service name instead of falling back to localhost:8080.
+        BE_INTERNAL_URL: http://backend:8080
+    ports:
+      - "3000:3000"
+    environment:
+      # Tells Next.js (server-side) to reach the BE via Docker service name.
+      # next.config.mjs rewrites and dashboard/page.tsx both read this variable.
+      BE_INTERNAL_URL: http://backend:8080
+      # Required by Next.js standalone server to bind on all interfaces
+      HOSTNAME: "0.0.0.0"
+      PORT: 3000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - sso-net
+    restart: unless-stopped
+
+networks:
+  sso-net:
+    driver: bridge

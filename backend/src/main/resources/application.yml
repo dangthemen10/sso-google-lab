@@ -1,0 +1,30 @@
+server:
+  port: 8080
+  # Tells Spring Boot to trust X-Forwarded-* headers from the Next.js reverse proxy.
+  # This ensures Spring Security generates redirect URIs using the public FE domain
+  # (http://localhost:3000) instead of the internal BE domain (http://localhost:8080).
+  forward-headers-strategy: framework
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            # Hardcode to the FE public URL.
+            # Google redirects the browser to this URL after authentication.
+            # Next.js rewrites rule will forward the request down to this BE.
+            redirect-uri: 'http://localhost:3000/api/be/login/oauth2/code/google'
+            scope:
+              - openid
+              - email
+              - profile
+        provider:
+          google:
+            user-name-attribute: sub
+
+logging:
+  level:
+    org.springframework.security: INFO
