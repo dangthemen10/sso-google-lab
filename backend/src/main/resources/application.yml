@@ -21,8 +21,24 @@ spring:
               - openid
               - email
               - profile
+          microsoft:
+            client-id: ${MICROSOFT_CLIENT_ID}
+            client-secret: ${MICROSOFT_CLIENT_SECRET}
+            redirect-uri: 'http://localhost:3000/api/be/login/oauth2/code/azure'
+            authorization-grant-type: authorization_code
+            scope:
+              - openid
+              - email
+              - profile
+            client-name: Microsoft
         provider:
           google:
+            user-name-attribute: sub
+          microsoft:
+            authorization-uri: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+            token-uri: https://login.microsoftonline.com/common/oauth2/v2.0/token
+            jwk-set-uri: https://login.microsoftonline.com/common/discovery/v2.0/keys
+            user-info-uri: https://graph.microsoft.com/oidc/userinfo
             user-name-attribute: sub
 
 logging:

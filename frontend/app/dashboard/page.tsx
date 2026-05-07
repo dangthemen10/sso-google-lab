@@ -7,6 +7,7 @@ interface UserInfo {
   name: string;
   email: string;
   picture: string;
+  provider: string;
 }
 
 /**
@@ -80,7 +81,8 @@ export default async function DashboardPage() {
           {/* Auth badge */}
           <span className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-            Authenticated via Google SSO
+            Authenticated via{' '}
+            {user.provider === 'microsoft' ? 'Microsoft' : 'Google'} SSO
           </span>
         </div>
 
