@@ -18,6 +18,7 @@ Demo **Single Sign-On (SSO) bằng Google OAuth2 và Microsoft OAuth2** với ki
 9. [Chạy dự án](#9--chạy-dự-án)
 10. [Giải thích kỹ thuật quan trọng](#10--giải-thích-kỹ-thuật-quan-trọng)
 11. [Các lỗi thường gặp & cách khắc phục](#11--các-lỗi-thường-gặp--cách-khắc-phục)
+12. [Scale — Redis Session Store](#12--scale--redis-session-store)
 
 ---
 
@@ -265,6 +266,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation('org.springframework.boot:spring-boot-starter-data-redis') {
+        exclude group: 'io.lettuce', module: 'lettuce-core' // dùng Jedis thay Lettuce
+    }
+    implementation 'redis.clients:jedis'
+    implementation 'org.springframework.session:spring-session-data-redis'
 }
 ```
 
@@ -283,6 +289,20 @@ server:
   forward-headers-strategy: framework
 
 spring:
+  session:
+    store-type: redis  # lưu session vào Redis thay vì in-memory
+    timeout: 30m
+  data:
+    redis:
+      client-type: jedis
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      jedis:
+        pool:
+          max-active: 10
+          max-idle: 5
+          min-idle: 1
+          max-wait: 2000ms
   security:
     oauth2:
       client:
@@ -296,7 +316,7 @@ spring:
             client-id: ${MICROSOFT_CLIENT_ID}
             client-secret: ${MICROSOFT_CLIENT_SECRET}
             redirect-uri: "http://localhost:3000/api/be/login/oauth2/code/microsoft"
-            authorization-grant-type: authorization_code  # phải khai báo rõ cho custom provider
+            authorization-grant-type: authorization_code
             scope: [openid, email, profile]
             client-name: Microsoft
         provider:
@@ -445,6 +465,12 @@ RUN npm run build
 
 ```yaml
 services:
+  redis:
+    image: redis:7-alpine
+    networks: [sso-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+
   backend:
     build: ./backend
     environment:
@@ -452,6 +478,9 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      REDIS_HOST: redis           # Docker service name
+    depends_on:
+      redis: { condition: service_healthy }
 
   frontend:
     build:
@@ -501,9 +530,16 @@ docker compose down
 ### Chạy local (development)
 
 ```bash
+# Bước 0: Khởi động Redis local
+brew install redis && brew services start redis
+# Hoặc dùng Docker:
+# docker run -d -p 6379:6379 redis:7-alpine
+
 # Terminal 1 — Backend
 cd backend
-GOOGLE_CLIENT_ID=xxx GOOGLE_CLIENT_SECRET=yyy ./gradlew bootRun
+GOOGLE_CLIENT_ID=xxx GOOGLE_CLIENT_SECRET=yyy \
+  MICROSOFT_CLIENT_ID=xxx MICROSOFT_CLIENT_SECRET=yyy \
+  ./gradlew bootRun
 
 # Terminal 2 — Frontend
 cd frontend
@@ -571,6 +607,33 @@ dashboard/page.tsx  fetch()  →  chạy khi: có HTTP request →  cần runtim
 | Local dev | `http://localhost:8080` (fallback) |
 | Docker | `http://backend:8080` (Docker service name) |
 
+### 10.6 Tại sao session lưu vào Redis thay vì RAM?
+
+Khi deploy nhiều instance BE (multi-host / multi-DC), mỗi instance có RAM riêng:
+
+```
+# Không có Redis — lỗi khi request đến sai instance
+User → Instance 1  → session lưu trong RAM instance 1
+User → Instance 2  → KHÔNG tìm thấy session → bị đá về login ✗
+
+# Có Redis — hoạt động đúng mọi instance
+User → Instance 1  ─┐
+                    ├──► Redis (shared) → tìm thấy session ✓
+User → Instance 2  ─┘
+```
+
+**Spring Session** tự động interceptor mọi `HttpSession` API và lưu ra Redis — không cần thay đổi bất kỳ dòng code nào trong `SecurityConfig` hay controller.
+
+**Jedis** được chọn thay Lettuce (default) vì hỗ trợ đầy đủ 3 chế độ topology:
+
+| Chế độ | Cấu hình | Dùng khi |
+|---|---|---|
+| Single node | `host` + `port` | Local dev, Docker Compose |
+| Sentinel | `sentinel.master` + `sentinel.nodes` | Production — HA, tự failover khi master chết |
+| Cluster | `cluster.nodes` | Khi cần sharding dữ liệu lớn trên nhiều node |
+
+Chuyển chế độ chỉ cần comment/uncomment trong `application.yml` — không đụng đến Java code.
+
 ---
 
 ## 11 — Các lỗi thường gặp & cách khắc phục
@@ -588,3 +651,47 @@ dashboard/page.tsx  fetch()  →  chạy khi: có HTTP request →  cần runtim
 | Dashboard trắng / redirect về Login ngay | JSESSIONID không được gửi kèm | Kiểm tra `credentials: 'include'` trong fetch của LogoutButton |
 | `invalid_client` từ Google hoặc Microsoft | Sai Client ID hoặc Secret | Kiểm tra giá trị trong `.env` |
 | BE không start kịp trước FE | Race condition | `depends_on: backend: condition: service_healthy` đã xử lý; tăng `start_period` nếu cần |
+| `Connection refused` đến Redis | Redis chưa start hoặc `REDIS_HOST` sai | Docker Compose: kiểm tra service `redis` healthy; Local: `brew services start redis` |
+| Session bị mất sau restart BE | Redis không persist data (default) | Thêm `--appendonly yes` vào Redis command nếu cần durability |
+
+---
+
+## 12 — Scale — Redis Session Store
+
+Xem [mục 10.6](#106-tại-sao-session-lưu-vào-redis-thay-vì-ram) để hiểu tại sao cần Redis.
+
+### Chuyển sang Sentinel (production HA)
+
+```yaml
+# application.yml — comment single node, bỏ comment sentinel
+spring:
+  data:
+    redis:
+      client-type: jedis
+      # host: ...  ← comment lại
+      sentinel:
+        master: ${REDIS_SENTINEL_MASTER:mymaster}
+        nodes:
+          - ${REDIS_SENTINEL_NODE_1:sentinel1:26379}
+          - ${REDIS_SENTINEL_NODE_2:sentinel2:26379}
+          - ${REDIS_SENTINEL_NODE_3:sentinel3:26379}
+```
+
+### Chuyển sang Cluster (horizontal scaling)
+
+```yaml
+# application.yml — comment single node, bỏ comment cluster
+spring:
+  data:
+    redis:
+      client-type: jedis
+      # host: ...  ← comment lại
+      cluster:
+        nodes:
+          - ${REDIS_CLUSTER_NODE_1:redis1:6379}
+          - ${REDIS_CLUSTER_NODE_2:redis2:6379}
+          - ${REDIS_CLUSTER_NODE_3:redis3:6379}
+        max-redirects: 3
+```
+
+> Không cần thay đổi bất kỳ dòng Java nào khi chuyển topology.
