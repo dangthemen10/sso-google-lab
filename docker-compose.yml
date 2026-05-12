@@ -1,6 +1,53 @@
 services:
 
   # ───────────────────────────────────────────────────
+  # Keycloak — local mock IdP (replaces Google/Microsoft for dev/test)
+  #
+  # Admin UI : http://localhost:8180  (admin / admin)
+  # One-time setup after first run:
+  #   1. Create Realm    : "sso-lab"
+  #   2. Create Client   : client-id "sso-lab-client"
+  #                        Access type: confidential
+  #                        Valid redirect URIs:
+  #                          http://localhost:3000/api/be/login/oauth2/code/keycloak
+  #   3. Copy the secret from Credentials tab → set KEYCLOAK_CLIENT_SECRET in .env
+  #   4. Create a test User with a password (Users → Set password)
+  # ───────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev
+    ports:
+      - "8180:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      # Fix split-hostname issuer mismatch:
+      # Browser uses localhost:8180, Spring Boot uses keycloak:8080 internally.
+      # Without a fixed hostname, Keycloak embeds different `iss` values in tokens
+      # depending on which hostname was used → userinfo endpoint rejects the token.
+      KC_HOSTNAME_URL: http://localhost:8180
+      KC_HOSTNAME_ADMIN_URL: http://localhost:8180
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      # Limit JVM heap to avoid OOM on resource-constrained machines (e.g. Rancher Desktop)
+      JAVA_OPTS_APPEND: "-Xms128m -Xmx384m"
+    volumes:
+      # Persist realm/client/user data across container restarts.
+      # Without this, all Keycloak config is lost on every restart.
+      - keycloak_data:/opt/keycloak/data
+    networks:
+      - sso-net
+    restart: unless-stopped
+    healthcheck:
+      # Check that Keycloak is actually serving the realm endpoint (not just port open).
+      # Uses only bash + /dev/tcp since curl/wget are not available in the image.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080 && printf \"GET /realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && timeout 3 cat <&3' 2>/dev/null | grep -q realm || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ───────────────────────────────────────────────────
   # Redis — shared session store
   # ───────────────────────────────────────────────────
   redis:
@@ -31,13 +78,17 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
-      # Redis service name inside Docker network
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      # Internal Docker hostnames for server-to-server calls
       REDIS_HOST: redis
+      KEYCLOAK_INTERNAL_HOST: keycloak:8080
     networks:
       - sso-net
     restart: unless-stopped
     depends_on:
       redis:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     healthcheck:
       # Spring Boot Actuator not included in demo, so check the login endpoint instead.
@@ -73,6 +124,9 @@ services:
     networks:
       - sso-net
     restart: unless-stopped
+
+volumes:
+  keycloak_data:
 
 networks:
   sso-net:

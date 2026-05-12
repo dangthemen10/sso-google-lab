@@ -4,6 +4,13 @@ server:
   # This ensures Spring Security generates redirect URIs using the public FE domain
   # (http://localhost:3000) instead of the internal BE domain (http://localhost:8080).
   forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        # Spring Session (Redis) defaults to "SESSION" as cookie name.
+        # Override to "JSESSIONID" so the Next.js server-side code (dashboard/page.tsx)
+        # and SecurityConfig (.deleteCookies) can find it by the expected name.
+        name: JSESSIONID
 
 spring:
   session:
@@ -70,6 +77,19 @@ spring:
               - email
               - profile
             client-name: Microsoft
+          # ── Keycloak (local mock IdP — no Google/Microsoft credentials needed) ──
+          # Requires Keycloak running via docker-compose (port 8180).
+          # See docker-compose.yml comments for one-time Keycloak setup steps.
+          keycloak:
+            client-id: sso-lab-client
+            client-secret: ${KEYCLOAK_CLIENT_SECRET:sso-lab-secret}
+            redirect-uri: 'http://localhost:3000/api/be/login/oauth2/code/keycloak'
+            authorization-grant-type: authorization_code
+            scope:
+              - openid
+              - email
+              - profile
+            client-name: Keycloak
         provider:
           google:
             user-name-attribute: sub
@@ -78,6 +98,16 @@ spring:
             token-uri: https://login.microsoftonline.com/common/oauth2/v2.0/token
             jwk-set-uri: https://login.microsoftonline.com/common/discovery/v2.0/keys
             user-info-uri: https://graph.microsoft.com/oidc/userinfo
+            user-name-attribute: sub
+          # ── Keycloak endpoints ───────────────────────────────────────────────────
+          # authorization-uri: browser-facing (host machine) → localhost:8180
+          # token/jwk/userinfo: server-to-server via Docker internal hostname
+          # KEYCLOAK_INTERNAL_HOST defaults to localhost:8180 for local dev without Docker.
+          keycloak:
+            authorization-uri: http://localhost:8180/realms/sso-lab/protocol/openid-connect/auth
+            token-uri: http://${KEYCLOAK_INTERNAL_HOST:localhost:8180}/realms/sso-lab/protocol/openid-connect/token
+            jwk-set-uri: http://${KEYCLOAK_INTERNAL_HOST:localhost:8180}/realms/sso-lab/protocol/openid-connect/certs
+            user-info-uri: http://${KEYCLOAK_INTERNAL_HOST:localhost:8180}/realms/sso-lab/protocol/openid-connect/userinfo
             user-name-attribute: sub
 
 logging:

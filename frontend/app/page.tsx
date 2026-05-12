@@ -56,6 +56,25 @@ function MicrosoftLogo() {
   );
 }
 
+// Keycloak shield logo
+function KeycloakLogo() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      aria-hidden="true">
+      <path
+        d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z"
+        fill="#4D9FE0"
+      />
+      <path d="M10 8h4v2.5h1.5L12 14l-3.5-3.5H10V8z" fill="white" />
+    </svg>
+  );
+}
+
 export default function LoginPage({
   searchParams,
 }: {
@@ -108,6 +127,21 @@ export default function LoginPage({
           className="flex items-center justify-center gap-3 w-full py-3 px-4 border border-gray-200 rounded-xl text-gray-700 font-medium text-sm hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm mt-3">
           <MicrosoftLogo />
           Continue with Microsoft
+        </a>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-xs text-gray-400">or (local dev)</span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        {/* Keycloak SSO Button (mock IdP for local testing) */}
+        <a
+          href="/api/be/oauth2/authorization/keycloak"
+          className="flex items-center justify-center gap-3 w-full py-3 px-4 border border-blue-200 rounded-xl text-blue-700 font-medium text-sm hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 shadow-sm">
+          <KeycloakLogo />
+          Continue with Keycloak (dev)
         </a>
 
         <p className="text-center text-xs text-gray-400 mt-6">
